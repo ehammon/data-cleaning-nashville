@@ -1,0 +1,133 @@
+USE nashville_housing;
+
+SELECT * FROM nashville_housing.housing_data;
+
+SELECT *
+FROM nashville_housing.housing_data
+WHERE propertyaddress IS NULL
+ORDER BY parcelid;
+
+
+-- SELF JOIN TO ASSIGN PROPERTIES WITH BLANK ADDRESS AND SAME PARCEL ID THE CORRECT ADDRESS FROM SEPARATE ENTRY
+
+
+SELECT a.parcelid, a.propertyaddress, b.parcelid, b.propertyaddress, IFNULL(a.propertyaddress, b.propertyaddress)
+FROM nashville_housing.housing_data as a
+JOIN nashville_housing.housing_data as b
+ON a.parcelid = b.parcelid
+AND a.uniqueid <> b.uniqueid
+WHERE a.propertyaddress IS NULL;
+
+UPDATE nashville_housing.housing_data a,
+	nashville_housing.housing_data b
+ SET b.propertyaddress = a.propertyaddress
+ WHERE b.propertyaddress IS NULL
+         AND b.parcelid = a.parcelid
+         AND a.propertyaddress IS NOT NULL; 
+
+-- SEPARATING ADDRESS INTO INDIVIDUAL COLUMNS (Address, City, State)
+
+
+SELECT propertyaddress FROM nashville_housing.housing_data;
+
+SELECT Substring_index(propertyaddress,',', 1) AS Address,
+	SUBSTRING(propertyaddress, LOCATE(',', propertyaddress)+1, CHAR_LENGTH(propertyaddress)) AS City
+FROM nashville_housing.housing_data;
+
+
+-- UPDATE TABLE WITH NEW COLUMNS AND SPLIT ADDRESS
+
+
+ALTER TABLE nashville_housing.housing_data
+ADD PropertySplitAddress VARCHAR(255);
+
+UPDATE nashville_housing.housing_data
+SET PropertySplitAddress = Substring_index(propertyaddress,',', 1);
+
+ALTER TABLE nashville_housing.housing_data
+ADD PropertySplitCity VARCHAR(255);
+
+UPDATE nashville_housing.housing_data
+SET PropertySplitCity = SUBSTRING(propertyaddress, LOCATE(',', propertyaddress)+1, CHAR_LENGTH(propertyaddress));
+
+
+-- SEPARATE OWNER ADDRESS COMPONENTS
+
+
+SELECT owneraddress
+from nashville_housing.housing_data;
+
+SELECT LOCATE(',', owneraddress)+1, 
+	(CHAR_LENGTH(propertyaddress)-CHAR_LENGTH(Substring_index(owneraddress,',', 1))-1)
+FROM nashville_housing.housing_data;
+
+SELECT TRIM(Substring_index(owneraddress,',', 1)) AS Address,
+	TRIM(SUBSTRING(owneraddress, LOCATE(',', owneraddress)+2, (CHAR_LENGTH(propertyaddress)-CHAR_LENGTH(Substring_index(owneraddress,',', 1))-2))) AS City,
+	TRIM(Substring_index(owneraddress,',', -1)) AS State
+FROM nashville_housing.housing_data;
+
+
+-- UPDATE TABLE WITH NEW OWNER SPLIT ADDRESS COLUMNS
+
+
+ALTER TABLE nashville_housing.housing_data
+ADD OwnerSplitAddress VARCHAR(255);
+
+UPDATE nashville_housing.housing_data
+SET OwnerSplitAddress = TRIM(SUBSTRING_INDEX(owneraddress,',', 1));
+
+ALTER TABLE nashville_housing.housing_data
+ADD OwnerSplitCity VARCHAR(255);
+
+UPDATE nashville_housing.housing_data
+SET OwnerSplitCity = TRIM(SUBSTRING(owneraddress, LOCATE(',', owneraddress)+2, (CHAR_LENGTH(propertyaddress)-CHAR_LENGTH(Substring_index(owneraddress,',', 1))-2)));
+
+ALTER TABLE nashville_housing.housing_data
+ADD OwnerSplitState VARCHAR(255);
+
+UPDATE nashville_housing.housing_data
+SET OwnerSplitState = TRIM(Substring_index(owneraddress,',', -1));
+
+
+-- Change Y & N to "Yes" and "No" in soldasvacant
+
+
+SELECT DISTINCT soldasvacant,COUNT(soldasvacant)
+from Nashville_housing.housing_data
+GROUP BY soldasvacant;
+
+UPDATE nashville_housing.housing_data
+SET SoldAsVacant = CASE WHEN soldasvacant = "Y" then "YES"
+		WHEN soldasvacant = "N" then "No"
+		ELSE soldasvacant
+		END;
+        
+        
+-- MARK DUPLICATES WITH ROW NUMBERS
+
+
+WITH RowNumCTE AS(
+SELECT * , 
+	ROW_NUMBER() OVER(PARTITION BY parcelid,
+								propertyaddress, 
+                                saleprice, 
+                                saledate, 
+                                legalreference
+                                ORDER BY uniqueid
+                                ) as row_num
+from Nashville_housing.housing_data
+)
+
+SELECT * 
+FROM RowNumCTE
+WHERE row_num > 1;
+
+-- DELETE NOT NEEDED COLUMNS
+ALTER TABLE Nashville_housing.housing_data
+DROP COLUMN owneraddress;
+
+ALTER TABLE Nashville_housing.housing_data
+DROP COLUMN propertyaddress;
+
+ALTER TABLE Nashville_housing.housing_data
+DROP COLUMN taxdistrict;
